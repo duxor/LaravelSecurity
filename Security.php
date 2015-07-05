@@ -1,184 +1,85 @@
-<?php
-/**
- * Klasa za obezbjeđenje bezbijednosti sistema administracije
- * User: Dušan Perišić
- * Date: 2/9/2015
- * Time: 12:20 AM
- *
- * Početna podešavanja:
- * * $salt - proizvoljan niz znakova za povećanje bezbijednosti jačine password-a
- * * $daminLogURL - adresa do login stranice za pristup administrativnom panelu
- * * korisnici - tabela u kojoj se nalaze korisnici sa poljima [id, username, password, token]
- * * log - tabela [id,korisnici_id,created_at]
- */
+# LaravelSecurity
 
-namespace App;
+Klasa je pisana za podršku **Laravel** framework-a, a koristi se za manipulaciju korisničkim pravima pristupa.
 
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Validator;
-use App\Korisnici;
-use Illuminate\Support\Facades\DB;
-class Security {
-    private $id;
-    private $username;
-    private $password;
-    private $salt='ix501^@)5MwfP39ijJDr27g';
-    private static $userID=2;
-    private static $modID=4;
-    private static $adminID=5;
-    private static $kreatorID=6;
-    public static $adminURL='/administracija';
-    public static $userURL='/korisnik';
-    public static $modURL='/moderacija';
-    public static $logURL='/log/login';
-    private $token;
-    private $redirectURL;
-    private $minLenPass=4;//minimalna duzina sifre i korisnickog imena
-    private $prava_pristupa;//prava_pristupa_id
+## Osnovni zahtjevi
+Za pravilno funkcionisanje klase potrebno je:
 
-//SETERI[$redirectURL, $username, $password, $token, $_SESSION[token,id,username]]
-    public function setRedirectURL($url){
-        $this->redirectURL = $url;
-    }
-    private function setUsername($username){
-        $this->username = $username;
-    }
-    private function setPass($pass){
-        $this->password = $pass;
-    }
-    public function setToken($token){
-        $this->token = $token;
-    }
-    private function setSessions(){
-        Session::put('token', $this->token);
-        Session::put('id', $this->id);
-        Session::put('username', $this->username);
-        Session::put('prava_pristupa', $this->prava_pristupa);
-    }
-//GENERATORI[hashPass, token]
-    public static function generateHashPass($pass){
-        $sec = new Security();
-        $sec->setPass(password_hash($pass.$sec->salt, PASSWORD_BCRYPT, ['cost' => 12]));
-        return $sec->password;
-    }
-    private function generateToken(){
-        $this->setToken(hash('haval256,5', $this->salt.uniqid().openssl_random_pseudo_bytes(50), false));
-        return $this->token;
-    }
-    public static function registracija($username,$email,$password,$password_potvrda,$prezime=null,$ime=null,$return_to_url=null){
-        $validator=Validator::make([
-            'username'=>$username,
-            'email'=>$email,
-            'password'=>$password,
-            'password_confirmation'=>$password_potvrda
-        ],[
-            'username'=>'required|min:5|unique:korisnici,username',
-            'email'=>'required|email|unique:korisnici,email',
-            'password'=>'required|min:5|confirmed',
-            'password_confirmation'=>'required|min:5'
-        ],[
-            //username
-            'username.required'=>'Obavezan unos username-a.',
-            'username.min'=>'Minimalna duzina username-a je :min.',
-            'username.unique'=>'Navedeni username je u upotrebi.',
-            //email
-            'email.email'=>'Pogrešno unesen email.',
-            'email.required'=>'Obavezan unos email-a.',
-            'email.unique'=>'Navedeni email je u upotrebi.',
-            //pass
-            'password.required'=>'Obavezan unos password-a.',
-            'password.min'=>'Minimalna duzina password-a je :min.',
-            'password.confirmed'=>'Unesene šifre se ne poklapaju.',
-            //pass_conf
-            'password_confirmation.required'=>'Obavezan unos password-a.',
-            'password_confirmation.min'=>'Minimalna duzina password-a je :min.'
-        ]);
-        if($validator->fails())if($return_to_url)  return redirect()->back()->withGreska($validator->errors()->toArray())->with(['return_to_url'=>$return_to_url]);
-                                else return redirect()->back()->withGreska($validator->errors()->toArray())->withInput();
+ * Kreirati tabelu log: 
+   ```php
+   Schema::create('pravapristupa', function(Blueprint $table)
+   {
+   		$table->bigIncrements('id');
+        $table->string('naziv', 45);
+        $table->timestamp('created_at')->default(DB::raw('CURRENT_TIMESTAMP'));
+        $table->timestamp('updated_at')->nullable();
+   });
+   Schema::create('korisnici', function(Blueprint $table)
+   {
+   		$table->bigIncrements('id');
+        $table->unsignedBigInteger('pravapristupa_id');
+        $table->foreign('pravapristupa_id')->references('id')->on('pravapristupa');
+        $table->string('username', 45);
+        $table->string('password', 100);
+        $table->string('token', 255)->nullable();
+        $table->boolean('online')->default(false);
+        $table->tinyInteger('aktivan')->default(1);
+        $table->timestamp('created_at')->default(DB::raw('CURRENT_TIMESTAMP'));
+        $table->timestamp('updated_at')->nullable();
+   });
+   Schema::create('log', function(Blueprint $table)
+   {
+      $table->bigIncrements('id');
+      $table->timestamp('create_at')->default(DB::raw('CURRENT_TIMESTAMP'));
+      $table->unsignedBigInteger('korisnici_id');
+      $table->foreign('korisnici_id')->references('id')->on('korisnici');
+   }); ``` 
+ * Na lokaciju [project folder]/ kopirati fajlove 
+ 	* Security.php
+ 	* Log.php
+ 	* Korisnici.php
+ 	* PravaPristupa.php
+ * Izvršiti osnovna podešavanja tako što ćete izvršiti izmjenu varijabli koje se nalaze u klasi Security:
+ 	* $salt - proizvoljan niz znakova za povećanje bezbijednosti i složenosti password-a i tokena (preporučuje se da se u stringu nalaze mala i velika slova, znakovi i brojevi, te da bude dužine 15-25 karaktera).
+ 	* $daminLogURL - adresa do login stranice za pristup administratorskom panelu
+ * Kreirati prava pristupa i korisnike.
 
-        $korisnik=new Korisnici();
-            $korisnik->username=$username;
-            $korisnik->email=$email;
-            $korisnik->password=Security::generateHashPass($password);
-            $korisnik->prezime=$prezime;
-            $korisnik->ime=$ime;
-            $korisnik->pravapristupa_id=2;
-            $korisnik->aktivan=1;
-        $korisnik->save();
-        return Redirect::to('/log/login')->withPotvrda('Uspešno ste izvršili registraciju. Možete da se prijavite na platformu.')->with(['return_to_url'=>$return_to_url]);
-    }
-    public static function comeFromUrl(){
-        return isset($_SERVER['HTTP_REFERER'])?parse_url($_SERVER['HTTP_REFERER'])['path']:null;
-    }
-    public static function forgetFromUrl(){
-        Session::forget('return_to_url');
-    }
-//FUNKCIONALNOSTI
 
-//#TESTERI[autentifikacija, input, login]
-    public static function autentifikacijaTest($prava=2,$min=null){
-        if (Session::has('id') and Session::has('token') and Session::has('prava_pristupa')) {
-            return Korisnici::where('id',Session::get('id'))->where('username',Session::get('username'))->where('token', Session::get('token'))->where('pravapristupa_id',($min=='min'?'>':'').'=',$prava)->exists();// $korisnik ? true : false;
-        } else return false;
-    }
-    private function inputTest($in){
-        return strlen($in)>$this->minLenPass;
-    }
-    public static function login($username, $password, $return_to_url=null,$mobile=false){
-        $sec = new Security();
+## Način korištenja
+> Nakon što su ispunjeni osnovni zahtjevi, možete početi sa korištenjem klase.
 
-        if($sec->inputTest($username) and $sec->inputTest($password)){
-            $sec->setUsername($username);
-            $sec->setPass($password);
+Prava pristupa korisnika u tabeli unošena su tako da se prvo unose oni sa manjim, a onda sa većim pravima, pa će porast ID-ja pratiti i domene korisničkih uticaja.
 
-            $korisnik = Korisnici::where('username',$sec->username)->where('aktivan',1)->get(['id','username','password','pravapristupa_id'])->first();
-            $test = $korisnik ? password_verify($sec->password.$sec->salt, $korisnik->password) : false;
+### Da li je korisnik određenih prava pristupa logovan?
+```php
+	return Security::autentifikacijaTest($id,$string);
+```
+ * $id=[number] - broj koji pokazuje pravo pristupa koje se provjerava kod korisnika
+ * $string=['min',null] - ukoliko je setovan na 'min', metoda će odgovoriti sa true ukoliko se pravo pristupa korisnika poklapa sa $id ili je veće od njega, inače false; ukoliko je setovan na null, metoda će odgovoriti sa true ukoliko se pravo pristupa korisnika poklapa sa $id, inače false;
+> $id i $string u drugim metodama imaju istu ulogu
+> Ukoliko se ne navedu $id i $string podrayumijevaju se vrijednosti [2,null]
 
-            if ($test){
-                $sec->id = $korisnik->id;
-                $sec->username = $korisnik->username;
-                $sec->prava_pristupa = $korisnik->pravapristupa_id;
-                $sec->generateToken();
-                Korisnici::where('id', $sec->id)->update(['token' => $sec->token]);
-                $sec->setSessions();
-                Log::insert(['korisnici_id'=>$korisnik->id]);
-            }else Korisnici::where('id', $sec->id)->update(['token' => null]);
-        }
-        if($mobile) return $test ? true : false;
-        if($return_to_url&&strcmp(substr($return_to_url,0,5),'/log/')!=0) return redirect($return_to_url);
-        return Security::rediectToLogin();
-    }
-//#REDIRECTORI[autentifikacija, logout, redirect, redirectToLogin]
-    public static function autentifikacija($target,$dodaci=null,$prava=null,$min=null){
-        if(!$prava) $prava=Session::has('prava_pristupa')?Session::get('prava_pristupa'):2;
-        return Security::autentifikacijaTest($prava,$min) ? $dodaci ? view($target, $dodaci) : view($target) : Security::rediectToLogin();
-    }
-    public static function logout($end=null){
-        if(Session::has('id')){
-            $korisnik = Korisnici::all(['id','token'])->find(Session::get('id'));
-            $korisnik->token = null;
-            $korisnik->save();
-        }
-        Session::flush();
-        $url_to_redirect=Security::comeFromUrl();
-        if($url_to_redirect&&!$end) return redirect($url_to_redirect);
-        return redirect('/');
-    }
-    public function redirect(){
-        return redirect($this->redirectURL);
-    }
-    public static function rediectToLogin(){
-        if(Session::has('prava_pristupa'))
-        if(Security::autentifikacijaTest(Session::get('prava_pristupa'))){
-            switch(Session::get('prava_pristupa')){
-                case Security::$userID:return redirect(Security::$userURL);break;
-                case Security::$modID:return redirect(Security::$modURL);break;
-                case Security::$adminID:
-                case Security::$kreatorID:
-                    return redirect(Security::$adminURL);break;
-            }
-        }
-        return redirect(Security::$logURL);
-    }
-}
+### Kako odobriti ristup određenoj stranici ukoliko je korisnik određenih prava pristupa logovan?
+
+```php
+	$array=['neki','niz'];
+	return Security::autentifikacija('administracija.index',compact('array'),$id,$string);
+```
+> Pristup administrativnoj index strani sa prosleđivanjem podataka kroz promjenjivu $array
+
+### Kako omogućiti korisniku da se loguje?
+```php
+	return Security::login(Input::get('username'),Input::get('password'),Input::get('return_to_url'));
+```
+> Korisnik se loguje sa korisničkim imenom i lozinkom, a ukoliko se zahtijeva povratak na prethodnu stranicu onda se prosleđuje i promjenjiva return_to_url.
+
+### Kako omogućiti registraciju korisnika?
+```php
+	return Security::registracija(Input::get('reg_username'),Input::get('reg_email'),Input::get('reg_password'),Input::get('reg_password_potvrda'),Input::get('reg_prezime'),Input::get('reg_ime'),Input::get('return_to_url'));
+```
+
+# Autor
+
+> # *Broje se samo rezultati!*
+> Dušan Perišić
+> [dusanperisic.com](https://dusanperisic.com) 
