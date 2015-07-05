@@ -6,7 +6,8 @@ Klasa je pisana za podršku **Laravel** framework-a, a koristi se za manipulacij
 Za pravilno funkcionisanje klase potrebno je:
 
  * Kreirati tabelu log: 
-   ```php
+ 
+ ```php
    Schema::create('pravapristupa', function(Blueprint $table)
    {
    		$table->bigIncrements('id');
